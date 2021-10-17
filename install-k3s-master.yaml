@@ -1,0 +1,167 @@
+#https://computingforgeeks.com/install-kubernetes-on-ubuntu-using-k3s/
+---
+- hosts: all
+  become: yes
+  become_method: sudo
+  tasks:
+###############################################################################
+#Update and Upgrade
+###############################################################################
+  - name: Ansible Update Cache and Upgrade all Packages
+    register: updatesys
+    apt:
+      name: "*"
+      state: latest
+      update_cache: yes
+
+  - name: Display status of Ansible Update Cache and Upgrade all Packages
+    debug:
+      msg:  "{{updatesys.stdout_lines|last}}"
+
+###############################################################################
+#apt-transport-https
+###############################################################################
+   
+  - name: Ansible install apt-transport-https
+    apt:
+      name: apt-transport-https
+      state: latest
+      update_cache: yes
+###############################################################################
+#ca-certificates
+###############################################################################
+  - name: Ansible install ca-certificates
+    apt:
+      update_cache: yes
+      name: ca-certificates
+      state: latest
+###############################################################################
+#curl
+###############################################################################
+  - name:  Ansible install curl
+    apt:
+      update_cache: yes
+      name: curl 
+      state: latest
+###############################################################################
+#software-properties-common
+###############################################################################
+  - name:  Ansible install software-properties-common
+    apt:
+      update_cache: yes
+      name: software-properties-common
+      state: latest
+###############################################################################
+#Docker Add Signing Key
+###############################################################################
+  - name: Add an Apt signing key, uses whichever key is at the URL
+    ansible.builtin.apt_key:
+      url: https://download.docker.com/linux/ubuntu/gpg
+      state: present
+###############################################################################
+#Docker Add Repo
+###############################################################################
+  - name: Add source repository into sources list
+    ansible.builtin.apt_repository:
+      repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable
+      state: present
+###############################################################################
+#Docker Install
+###############################################################################
+  - name:  Ansible install docker
+    apt:
+      update_cache: yes
+      name: docker-ce
+      state: latest
+###############################################################################
+#Validdate Installs
+###############################################################################
+
+  - name: Gather Package facts
+    package_facts:
+      manager: auto
+      
+  - name: Validating if the package is installed or not
+    debug: 
+      msg: "{{item}} is installed"
+    when: '"{{item}}" in ansible_facts.packages'
+    with_items:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - software-properties-common
+      - docker-ce
+###############################################################################
+#Enable Docker
+###############################################################################
+  - name: Enable service docker
+    ansible.builtin.systemd:
+      name: docker
+      enabled: yes
+###############################################################################
+#Start Docker
+###############################################################################
+  - name: Make sure a docker service running
+    ansible.builtin.systemd:
+      state: started
+      name: docker
+
+  - name: Populate service facts
+    ansible.builtin.service_facts:
+
+  - name: Print service facts
+    ansible.builtin.debug:
+      var: ansible_facts.services["docker"]
+###############################################################################
+#Create Docker Group
+###############################################################################
+  - name: Ensure group "docker" exists
+    ansible.builtin.group:
+      name: docker
+      state: present
+  - name: Add the user 'vagrant to docker group
+    ansible.builtin.user:
+      name: vagrant
+      group: docker
+  
+###############################################################################
+#Install K3s Master Node
+###############################################################################
+  - name: Fetch K3s
+    ansible.builtin.uri:
+      url: https://get.k3s.io
+      dest: /tmp/k3s.sh
+
+  - name: Run k3s installer
+    ansible.builtin.shell:
+      cmd: cat /tmp/k3s.sh | sh -s - --docker --write-kubeconfig-mode 644
+
+  - name: Enable service k3s
+    ansible.builtin.systemd:
+      name: k3s
+      enabled: yes
+
+  - name: Populate service facts
+    ansible.builtin.service_facts:
+
+  - name: Print service facts
+    ansible.builtin.debug:
+      var: ansible_facts.services["k3s"]
+  
+  - name: kubectl get nodes -o wide
+    register: k3shealth
+    ansible.builtin.shell:
+      cmd: sudo kubectl get nodes -o wide
+    
+  - name: Display kubectl get nodes -o wide
+    debug:
+      msg:  "{{k3shealth.stdout_lines}}"
+  
+  - name: cat /var/lib/rancher/k3s/server/node-token
+    register: node_token
+    ansible.builtin.shell:
+      cmd: sudo cat /var/lib/rancher/k3s/server/node-token
+    
+  - name: Display /var/lib/rancher/k3s/server/node-token
+    debug:
+      msg:  "{{node_token.stdout_lines}}"
